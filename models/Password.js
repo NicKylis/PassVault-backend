@@ -8,7 +8,7 @@ const PasswordSchema = new mongoose.Schema(
     },
     username: {
       type: String,
-      default: null,
+      required: true,
     },
     password: {
       type: String,
