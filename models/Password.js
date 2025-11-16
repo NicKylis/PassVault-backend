@@ -2,13 +2,18 @@ import mongoose from "mongoose";
 
 const PasswordSchema = new mongoose.Schema(
   {
+    userId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      required: true,
+    },
     title: {
       type: String,
       required: true,
     },
     username: {
       type: String,
-      default: null,
+      required: true,
     },
     password: {
       type: String,
@@ -45,15 +50,6 @@ const PasswordSchema = new mongoose.Schema(
     timestamps: true,
   }
 );
-
-PasswordSchema.set("toJSON", {
-  virtuals: true,
-  versionKey: false,
-  transform: (_, ret) => {
-    ret.id = ret._id;
-    delete ret._id;
-  },
-});
 
 const Password = mongoose.model("Password", PasswordSchema);
 
