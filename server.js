@@ -19,7 +19,7 @@ const PORT = process.env.PORT || 5000;
 // GET all passwords
 app.get("/api/passwords", authMiddleware, async (req, res) => {
   try {
-    const listOfPasswords = await Password.find({ userId: req.user.id });
+    const listOfPasswords = await Password.find({ ownerId: req.user.id });
     res.json(listOfPasswords);
   } catch (err) {
     console.error(err);
@@ -32,8 +32,8 @@ app.post("/api/passwords", authMiddleware, async (req, res) => {
   try {
     const passwordData = req.body;
     // associate the password with the authenticated user
-    const userId = req.user.id;
-    passwordData.userId = userId;
+    const ownerId = req.user.id;
+    passwordData.ownerId = ownerId;
     const createdPassword = await Password.create(passwordData);
     res.json(createdPassword);
   } catch (err) {
@@ -48,7 +48,7 @@ app.put("/api/passwords/:id/favorite", authMiddleware, async (req, res) => {
     const { id } = req.params;
 
     // ensure the password belongs to the authenticated user
-    const password = await Password.findOne({ _id: id, userId: req.user.id });
+    const password = await Password.findOne({ _id: id, ownerId: req.user.id });
 
     if (!password) return res.status(404).json({ error: "Password not found" });
     password.favorite = !password.favorite;
@@ -67,7 +67,7 @@ app.put("/api/passwords/:id/use", authMiddleware, async (req, res) => {
     const { id } = req.params;
 
     const password = await Password.findOneAndUpdate(
-      { _id: id, userId: req.user.id },
+      { _id: id, ownerId: req.user.id },
       { lastUsedAt: new Date() },
       { new: true }
     );
