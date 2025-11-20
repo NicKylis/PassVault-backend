@@ -38,5 +38,14 @@ UserSchema.methods.comparePassword = async function (password) {
   return bcrypt.compare(password, this.passwordHash);
 };
 
+UserSchema.set("toJSON", {
+  virtuals: true,
+  versionKey: false,
+  transform: (_, ret) => {
+    ret.id = ret._id;
+    delete ret._id;
+  },
+});
+
 const User = mongoose.model("User", UserSchema);
 export default User;
