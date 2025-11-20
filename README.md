@@ -19,7 +19,11 @@ git clone git@github.com:NicKylis/PassVault-backend.git
 
 - initiate a MongoDB database
 
-- modify .env.example and add your MongoDB URI and a JWT secret string.
+    - Create an account at https://www.mongodb.com/
+    - Setup a project and a cluster within the project
+    - Copy the URL provided (with the database username and password)
+
+- create an `.env` file and add your MongoDB URI and a JWT secret string, as shown in `.env.example`
 
 - install the node modules with:
 
