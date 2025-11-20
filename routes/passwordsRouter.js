@@ -139,42 +139,67 @@ router.delete("/shared/:id", async (req, res) => {
   res.json({ message: "Removed" });
 });
 
-// Share password with another user
+// Share password with other users (owner only)
 router.post("/:id/share", async (req, res) => {
   try {
     const passwordId = req.params.id;
-    const { email } = req.body;
+    const { emails } = req.body; // Expect: array of emails
 
-    const recipient = await User.findOne({ email });
-    if (!recipient) return res.status(404).json({ message: "User not found" });
+    if (!emails || !Array.isArray(emails) || emails.length === 0) {
+      return res.status(400).json({ message: "No emails provided" });
+    }
 
-    if (recipient._id.toString() === (req.user._id || req.user).toString())
-      return res
-        .status(400)
-        .json({ message: "Cannot share password with yourself" });
-
+    // Verify requester is owner
     const password = await Password.findById(passwordId);
-    if (
-      !password ||
-      password.ownerId.toString() !== (req.user._id || req.user).toString()
-    )
-      return res.status(403).json({ message: "Not allowed" });
+    const userId = req.user._id?.toString() || req.user.toString();
+    if (!password) {
+      return res.status(404).json({ message: "Password not found" });
+    }
 
-    const existing = await SharedPassword.findOne({
-      passwordId,
-      sharedWithId: recipient._id,
-    });
-    if (existing)
-      return res.status(400).json({ message: "Already shared with this user" });
+    if (password.ownerId.toString() !== userId) {
+      return res.status(403).json({ message: "Not owner" });
+    }
 
-    const shared = await SharedPassword.create({
-      passwordId,
-      sharedWithId: recipient._id,
-    });
-    password.shared = true;
-    await password.save();
+    const results = [];
 
-    res.json(shared);
+    for (const email of emails) {
+      const recipient = await User.findOne({ email: email.trim() });
+      if (!recipient) {
+        results.push({ email, status: "failed", reason: "User not found" });
+        continue;
+      }
+
+      // Owner cannot share to themselves
+      if (recipient._id.toString() === userId) {
+        results.push({
+          email,
+          status: "failed",
+          reason: "Cannot share with yourself",
+        });
+        continue;
+      }
+
+      // Check if already shared
+      const existing = await SharedPassword.findOne({
+        passwordId,
+        sharedWithId: recipient._id,
+      });
+      if (existing) {
+        results.push({ email, status: "failed", reason: "Already shared" });
+        continue;
+      }
+
+      // Create shared record
+      const shared = await SharedPassword.create({
+        passwordId,
+        sharedWithId: recipient._id,
+        favorite: false,
+      });
+
+      results.push({ email, status: "success", sharedId: shared._id });
+    }
+
+    res.json({ message: "Share operation completed", results });
   } catch (err) {
     console.error(err);
     res.status(500).json({ message: err.message });
@@ -211,6 +236,32 @@ router.delete("/:id", async (req, res) => {
     res.json({ message: "Deleted" });
   } catch (err) {
     res.status(500).json({ error: err.message });
+  }
+});
+
+// Get all users this password is shared with
+router.get("/:id/shared-users", async (req, res) => {
+  try {
+    const passwordId = req.params.id;
+
+    // Ensure owner
+    const password = await Password.findOne({
+      _id: passwordId,
+      ownerId: req.user.id,
+    });
+
+    if (!password) return res.status(403).json({ message: "Not allowed" });
+
+    // Find all records in SharedPassword
+    const sharedEntries = await SharedPassword.find({ passwordId }).populate(
+      "sharedWithId",
+      "name email"
+    );
+
+    res.json(sharedEntries);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: err.message });
   }
 });
 
