@@ -11,6 +11,7 @@ router.post("/", async (req, res) => {
     const newPass = await Password.create({
       ...req.body,
       ownerId: req.user._id || req.user,
+      lastUsedAt: new Date(),
     });
     res.json(newPass);
   } catch (err) {
@@ -250,8 +251,9 @@ router.get("/:id/shared-users", async (req, res) => {
       ownerId: req.user.id,
     });
 
-    if (!password) return res.status(403).json({ message: "Not allowed" });
-
+    if (!password) {
+      return res.status(403).json({ message: "Not allowed" });
+    }
     // Find all records in SharedPassword
     const sharedEntries = await SharedPassword.find({ passwordId }).populate(
       "sharedWithId",
