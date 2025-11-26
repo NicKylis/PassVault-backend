@@ -1,0 +1,171 @@
+{ 
+ "openapi":"3.0.0",
+ "info":{
+   "title":"Auth Router",
+   "version":"1.0.0",
+   "description":"Endpoints for user registration and login."
+ },
+ "tags":[
+   {
+    "name":"Auth",
+    "description":"Authentication endpoints"
+   }
+ ],
+ "paths":{
+    "/register":{
+        "post":{
+            "summary":"Register a new user",
+            "tags":["Auth"],
+            "requestBody":{
+                "required":true,
+                "content":{
+                    "application/json":{
+                        "schema":{
+                            "$ref":"#/components/schemas/RegisterRequest"
+                        }
+                    }
+                }
+            },
+            "responses":{
+                "200":{
+                    "description":"Registration successful",
+                    "content":{
+                        "application/json":{
+                            "schema":{
+                                "$ref":"#/components/schemas/AuthSuccessResponse"
+                            }
+                        }
+                    }
+                },
+                "400":{
+                    "description":"Missing fields or email already in use",
+                    "content":{
+                        "application/json":{
+                            "schema":{"$ref":"#/components/schemas/ErrorResponse"}
+                        }
+                    }
+                },
+                "500":{
+                    "description":"Server Error",
+                    "content":{
+                        "application/json":{
+                            "schema":{"$ref":"#/components/schemas/ErrorResponse" }
+                        }
+                    }
+                }
+            }
+        }
+    },
+ "/login":{
+    "post":{
+        "summary":"Login an existing user",
+        "tags":["Auth"],
+        "requestBody":{
+            "required":true,
+            "contest":{
+                "application/json":{
+                    "schema":{
+                        "$ref":"#/components/schemas/LoginRequest"
+                    }
+                }
+            }
+        },
+        "responses":{
+            "200":{
+                "description":"Login successful",
+                "content":{
+                    "application/json":{
+                        "schema":{
+                            "$ref":"#/components/schemas/AuthSuccessResponse"
+                        }
+                    }
+                }
+            },
+            "400":{
+                "description":"Invalid credentials",
+                "content":{
+                    "application/json":{
+                        "schema":{ "$ref":"#/components/schemas/ErrorResponse"}
+                    }
+                }
+            },
+            "500":{
+                "description":"Server Error",
+                "content":{
+                    "application/json":{
+                        "schema":{ "$ref":"#/components/schemas/ErrorResponse"}
+                    }
+                }
+            }
+        }
+    }
+ }
+ },
+ "components":{
+    "schema":{
+        "RegisterRequest":{
+            "type":"object",
+            "required":["name","email","password"],
+            "properties":{
+                "name":{
+                    "type":"string",
+                    "example":"Elpida"
+                },
+                "email":{
+                    "type":"string",
+                    "format":"email",
+                    "example":"elpida@example.com"
+                },
+                "password":{
+                    "type":"string",
+                    "format":"password",
+                    "example":"mypassword123"
+                }
+            }
+    },
+    "LoginRequest":{
+        "type":"object",
+        "required":["email","password"],
+        "properties":{
+            "email":{
+                "type":"string",
+                "format":"email",
+                "example":"elpida@example.com"
+            },
+            "password":{
+                "type":"string",
+                "format":"password",
+                "example":"mypassword123"
+            }
+        }
+    },
+    "AuthSuccessResponse":{
+        "type":"object",
+        "properties":{
+            "token":{
+                "type":"string",
+                "example":"jwt.token.here"
+            },
+            "user":{
+                "type":"object",
+                "properties":{
+                    "id":{ "type":"string","example": "65c1d9b2f1e45c0012c45678"},
+                    "name":{ "type":"string", "example":"Elpida"},
+                    "email":{ "type":"string", "example":"elpida@example.com"}
+                }
+            }
+        }
+    },
+
+    "ErrorResponse":{
+        "type":"object",
+        "properties":{
+            "error":{
+                "type":"string",
+                "example":["Invalid credentials","Email already in use","Invalid credentials","Failed to refster","Failed to login"]
+            }
+        }
+    }
+ }
+ }
+}
