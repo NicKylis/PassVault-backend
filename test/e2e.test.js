@@ -8,19 +8,41 @@ import { startTestDB, stopTestDB, clearDb } from "./helpers.js";
 let server;
 let baseUrl;
 
+/* 
+ * BEFORE, AFTER, and BEFORE EACH hooks
+ */
+
 test.before(async () => {
-  // start test database
   await startTestDB();
-  // start HTTP listener using a fresh server instance (don't call app.listen twice)
   server = http.createServer(app);
   baseUrl = await listen(server);
 });
 
 test.after.always(async () => {
-  // cleanup server and DB
   if (server && server.close) server.close();
   await stopTestDB();
 });
+
+test.beforeEach(async () => {
+  await clearDb();
+});
+
+/* 
+ * HELPER FUNCTIONS
+ */
+
+// helper to register a user and return token
+async function registerAndGetToken(name, email, password) {
+  const res = await got.post(`${baseUrl}/register`, {
+    json: { name, email, password },
+    responseType: "json",
+  });
+  return res.body.token;
+}
+
+/* 
+ * TESTS
+ */
 
 test.serial("auth register -> login -> create + get passwords", async (t) => {
   // register
@@ -76,19 +98,12 @@ test.serial("protected routes reject anonymous", async (t) => {
     responseType: "json",
     throwHttpErrors: false,
   });
-  // since auth middleware returns 401 by default
   t.is(res.statusCode, 401);
 });
 
 test.serial("toggle favorite and mark used (owner)", async (t) => {
-  // register and login another user
-  const r = await got.post(`${baseUrl}/register`, {
-    json: { name: "Bob", email: "bob@example.test", password: "pw" },
-    responseType: "json",
-  });
-  const token = r.body.token;
+  const token = await registerAndGetToken("Bob", "bob@example.test", "pw");
 
-  // create password
   const pw = await got.post(`${baseUrl}/api/passwords`, {
     json: { title: "Test", username: "b", password: "p" },
     headers: { Authorization: `Bearer ${token}` },
@@ -109,4 +124,68 @@ test.serial("toggle favorite and mark used (owner)", async (t) => {
     responseType: "json",
   });
   t.is(used.statusCode, 200);
+});
+
+test.serial("share password with another user and verify shared listing", async (t) => {
+  const aliceToken = await registerAndGetToken("Alice", "alice2@example.test", "pw1");
+  const bobToken = await registerAndGetToken("Bob", "bob2@example.test", "pw2");
+
+  const pw = await got.post(`${baseUrl}/api/passwords`, {
+    json: { title: "SharedItem", username: "a", password: "s" },
+    headers: { Authorization: `Bearer ${aliceToken}` },
+    responseType: "json",
+  });
+  const passwordId = pw.body.id || pw.body._id;
+
+  // attempt to share to Bob
+  const shareRes = await got.post(`${baseUrl}/api/passwords/${passwordId}/share`, {
+    json: { emails: ["bob2@example.test"] },
+    headers: { Authorization: `Bearer ${aliceToken}` },
+    responseType: "json",
+  });
+  t.is(shareRes.statusCode, 200);
+
+  // Bob should see it in shared list
+  const bobList = await got(`${baseUrl}/api/passwords`, {
+    headers: { Authorization: `Bearer ${bobToken}` },
+    responseType: "json",
+  });
+  t.is(bobList.statusCode, 200);
+  t.truthy(Array.isArray(bobList.body.shared));
+  t.is(bobList.body.shared.length, 1);
+  t.is(bobList.body.shared[0].title, "SharedItem");
+});
+
+test.serial("only owner can get shared-users and non-owner cannot delete password", async (t) => {
+  const aliceToken = await registerAndGetToken("Alice", "alice4@example.test", "pw1");
+  const bobToken = await registerAndGetToken("Bob", "bob4@example.test", "pw2");
+
+  const pw = await got.post(`${baseUrl}/api/passwords`, {
+    json: { title: "OwnerOnly", username: "a", password: "s" },
+    headers: { Authorization: `Bearer ${aliceToken}` },
+    responseType: "json",
+  });
+  const passwordId = pw.body.id || pw.body._id;
+
+  await got.post(`${baseUrl}/api/passwords/${passwordId}/share`, {
+    json: { emails: ["bob4@example.test"] },
+    headers: { Authorization: `Bearer ${aliceToken}` },
+    responseType: "json",
+  });
+
+  // owner can get shared users
+  const sharedUsers = await got(`${baseUrl}/api/passwords/${passwordId}/shared-users`, {
+    headers: { Authorization: `Bearer ${aliceToken}` },
+    responseType: "json",
+  });
+  t.is(sharedUsers.statusCode, 200);
+  t.truthy(Array.isArray(sharedUsers.body || []));
+
+  // Bob (non-owner) cannot delete the password
+  const delRes = await got.delete(`${baseUrl}/api/passwords/${passwordId}`, {
+    headers: { Authorization: `Bearer ${bobToken}` },
+    responseType: "json",
+    throwHttpErrors: false,
+  });
+  t.true([403, 404].includes(delRes.statusCode));
 });

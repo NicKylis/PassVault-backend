@@ -1,0 +1,39 @@
+name: CI - Passvault
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    env:
+      JWT_SECRET: ${{ secrets.JWT_SECRET }}
+    steps:
+      - name: Install libssl1.1
+        run: |
+          sudo add-apt-repository "deb http://security.ubuntu.com/ubuntu focal-security main"
+          sudo apt-get update
+          sudo apt-get install -y libssl1.1
+
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 18
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run AVA tests with coverage
+        run: npm run test:coverage
+
+      # - name: Deploy to Render
+      #   run: curl -X POST "$RENDER_DEPLOY_HOOK"
+      #   env:
+      #     RENDER_DEPLOY_HOOK: ${{ secrets.RENDER_DEPLOY_HOOK }}

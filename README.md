@@ -1,4 +1,5 @@
 # PassVault backend
+![Build Status](https://github.com/NicKylis/PassVault-backend/actions/workflows/ci.yml/badge.svg)
 
 Passvault is a password manager application developed for the second course
 of Software Engineering at the Aristotle University of Thessaloniki. The backend
@@ -8,6 +9,7 @@ of the application runs on Javascript, with the support of a MongoDB database.
 
 - nodejs npm
 - a MongoDB database
+- libssl1.1
 
 ## Installing and running Passvault's backend as a developer
 
@@ -35,4 +37,20 @@ npm i
 
 ```
 npm run dev
+```
+
+- run the tests with:
+
+```
+npm run test
+```
+
+## Notes
+
+- for linux users installation of libssl1.1 is most probably needed:
+
+```
+sudo add-apt-repository 'deb http://security.ubuntu.com/ubuntu focal-security main'
+sudo apt update
+sudo apt install libssl1.1
 ```
