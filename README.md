@@ -1,6 +1,5 @@
 # PassVault backend
-[![codecov](https://codecov.io/gh/NicKylis/Passvault-backend/branch/main/graph/badge.svg)](https://codecov.io/gh/NicKylis/Passvault-backend)
-
+![Build Status](https://github.com/NicKylis/PassVault-backend/actions/workflows/ci.yml/badge.svg)
 
 Passvault is a password manager application developed for the second course
 of Software Engineering at the Aristotle University of Thessaloniki. The backend
