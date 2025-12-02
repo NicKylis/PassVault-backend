@@ -33,9 +33,6 @@ jobs:
       - name: Run AVA tests with coverage
         run: npm run test:coverage
 
-      - name: Build Vite app
-        run: npm run build
-
       # - name: Deploy to Render
       #   run: curl -X POST "$RENDER_DEPLOY_HOOK"
       #   env:
