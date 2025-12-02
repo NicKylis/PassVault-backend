@@ -9,7 +9,8 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
-
+    env:
+      JWT_SECRET: ${{ secrets.JWT_SECRET }}
     steps:
       - name: Install libssl1.1
         run: |
