@@ -33,6 +33,11 @@ jobs:
       - name: Run AVA tests with coverage
         run: npm run test:coverage
 
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    steps:
       - name: Deploy to Render
         run: curl -X POST "$RENDER_DEPLOY_HOOK"
         env:
