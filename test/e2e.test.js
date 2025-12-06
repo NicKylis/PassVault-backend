@@ -6,6 +6,9 @@ import app from "../server.js";
 import { startTestDB, stopTestDB, clearDb } from "./helpers.js";
 import { create } from "domain";  // to avoid unused import error
 import mongoose from "mongoose"; // to avoid unused import error
+import User from "../models/User.js";
+import jwt from "jsonwebtoken";
+import Password from "../models/Password.js";
 
 let server;
 let baseUrl;
@@ -45,6 +48,167 @@ async function registerAndGetToken(name, email, password) {
 /* 
  * TESTS
  */
+
+
+test.serial("auth middleware rejects requests with no token", async (t) => {
+  const res = await got.get(`${baseUrl}/api/passwords`, {
+    responseType: "json",
+    throwHttpErrors: false,
+  });
+  t.is(res.statusCode, 401);
+  t.is(res.body.error, "No token provided");
+});
+
+test.serial("auth middleware rejects invalid token", async (t) => {
+  const badToken = "this.is.not.a.valid.token";
+  const res = await got.get(`${baseUrl}/api/passwords`, {
+    headers: { Authorization: `Bearer ${badToken}` },
+    responseType: "json",
+    throwHttpErrors: false,
+  });
+  t.is(res.statusCode, 401);
+  t.is(res.body.error, "Token invalid");
+});
+
+test.serial("auth middleware rejects token for non-existent user", async (t) => {
+  const fakeUserId = new mongoose.Types.ObjectId().toString();
+  const secret = process.env.JWT_SECRET;
+  t.truthy(secret, "JWT_SECRET must be set for this test");
+
+  const token = jwt.sign({ id: fakeUserId }, secret);
+
+  const res = await got.get(`${baseUrl}/api/passwords`, {
+    headers: { Authorization: `Bearer ${token}` },
+    responseType: "json",
+    throwHttpErrors: false,
+  });
+
+  t.is(res.statusCode, 401);
+  t.is(res.body.error, "Invalid token");
+});
+
+test.serial("register returns 400 when fields are missing", async (t) => {
+  const res = await got.post(`${baseUrl}/register`, {
+    json: { name: "NoPass", email: "nopass@example.test" },
+    responseType: "json",
+    throwHttpErrors: false,
+  });
+
+  t.is(res.statusCode, 400);
+  t.is(res.body.error, "Please fill in all the fields.");
+});
+
+test.serial("register catch block returns 500 on db error", async (t) => {
+  // stub findOne to throw
+  const origFindOne = User.findOne;
+  User.findOne = async () => { throw new Error("db fail"); };
+
+  try {
+    const res = await got.post(`${baseUrl}/register`, {
+      json: { name: "Bob", email: "bob@err.test", password: "pw" },
+      responseType: "json",
+      throwHttpErrors: false,
+    });
+
+    t.is(res.statusCode, 500);
+    t.is(res.body.error, "Failed to register");
+  } finally {
+    User.findOne = origFindOne;
+  }
+});
+
+test.serial("login catch block returns 500 on db error", async (t) => {
+  // stub findOne to throw
+  const origFindOne = User.findOne;
+  User.findOne = async () => { throw new Error("db fail"); };
+
+  try {
+    const res = await got.post(`${baseUrl}/login`, {
+      json: { email: "noone@err.test", password: "pw" },
+      responseType: "json",
+      throwHttpErrors: false,
+    });
+
+    t.is(res.statusCode, 500);
+    t.is(res.body.error, "Failed to login");
+  } finally {
+    User.findOne = origFindOne;
+  }
+});
+
+test.serial("register returns 400 when email already in use", async (t) => {
+  // first register
+  const res1 = await got.post(`${baseUrl}/register`, {
+    json: { name: "Dup", email: "dup@example.test", password: "pw" },
+    responseType: "json",
+  });
+  t.is(res1.statusCode, 200);
+
+  // attempt to register again with same email
+  const res2 = await got.post(`${baseUrl}/register`, {
+    json: { name: "Dup2", email: "dup@example.test", password: "pw2" },
+    responseType: "json",
+    throwHttpErrors: false,
+  });
+  t.is(res2.statusCode, 400);
+  t.is(res2.body.error, "Email already in use");
+});
+
+test.serial("login returns 400 for wrong password", async (t) => {
+  const email = `wrongpw_${Date.now()}@example.test`;
+  // register
+  const reg = await got.post(`${baseUrl}/register`, {
+    json: { name: "WP", email, password: "correct" },
+    responseType: "json",
+  });
+  t.is(reg.statusCode, 200);
+
+  // attempt login with wrong password
+  const login = await got.post(`${baseUrl}/login`, {
+    json: { email, password: "incorrect" },
+    responseType: "json",
+    throwHttpErrors: false,
+  });
+  t.is(login.statusCode, 400);
+  t.is(login.body.error, "Invalid credentials");
+});
+
+test.serial("deleting a user triggers Password.deleteMany middleware (lines 19-25)", async (t) => {
+  // spy on Password.deleteMany
+  const origDeleteMany = Password.deleteMany;
+  let called = false;
+  let calledWith = null;
+  Password.deleteMany = async function (q) {
+    called = true;
+    calledWith = q;
+    return origDeleteMany.call(this, q);
+  };
+
+  try {
+    const u = new User({ name: "Del", email: "del@example.test", passwordHash: "pw" });
+    await u.save();
+
+    // create a password that references the user (ownerId field)
+    const pw = new Password({ ownerId: u._id, title: "T", username: "u", password: "p" });
+    await pw.save();
+
+    // call document deleteOne() which should run the pre "deleteOne" middleware
+    await u.deleteOne();
+
+    // user should be removed
+    const found = await User.findById(u._id);
+    t.falsy(found, "user should be deleted");
+
+    // middleware should have called Password.deleteMany with the user id (this.id)
+    t.true(called, "Password.deleteMany should be called by middleware");
+    t.truthy(calledWith && (calledWith.user === String(u.id) || calledWith.user === u._id || calledWith.ownerId === u._id));
+  } finally {
+    // restore
+    Password.deleteMany = origDeleteMany;
+  }
+});
+
+
 
 test.serial("auth register -> login -> create + get passwords", async (t) => {
   // register
