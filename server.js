@@ -1,7 +1,6 @@
 import express from "express";
 import cors from "cors";
 import dotenv from "dotenv";
-import mongoose from "mongoose";
 import authRouter from "./routes/authRouter.js";
 import passwordsRouter from "./routes/passwordsRouter.js";
 import { authMiddleware } from "./middleware/auth.js";
