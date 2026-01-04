@@ -11,6 +11,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       JWT_SECRET: ${{ secrets.JWT_SECRET }}
+      MONGO_URI: ${{ secrets.MONGO_URI }}
     steps:
       - name: Install libssl1.1
         run: |
