@@ -11,6 +11,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       JWT_SECRET: ${{ secrets.JWT_SECRET }}
+      MONGO_URI: ${{ secrets.MONGO_URI }}
     steps:
       - name: Install libssl1.1
         run: |
@@ -32,6 +33,26 @@ jobs:
 
       - name: Run AVA tests with coverage
         run: npm run test:coverage
+
+      - name: Start API
+        run: |
+          npm run dev &
+          for i in {1..20}; do
+            curl -s http://localhost:5000/health && exit 0
+            sleep 2
+          done
+          echo "API failed to start"
+          exit 1
+
+      - name: k6 tests
+        run:  |
+          sudo snap install k6
+          cd k6
+          k6 run AuthLoadTest.js
+          k6 run AuthSpike.js
+          k6 run PasswordDelLoadTest.js
+          k6 run PasswordSpite.js
+          cd ..
 
   deploy:
     needs: build
