@@ -35,6 +35,7 @@ jobs:
 
       - name: k6 tests
         run:  |
+          npm run dev
           sudo snap install k6
           cd k6
           k6 run AuthLoadTest.js
