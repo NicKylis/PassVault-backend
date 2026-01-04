@@ -1,255 +1,191 @@
 import http from 'k6/http';
 import { check, sleep } from 'k6';
-import { Rate, Trend, Counter } from 'k6/metrics';
+import { Rate, Trend } from 'k6/metrics';
 
 // ============================================
-// SIMPLIFIED METRICS
+// METRICS (MEANINGFUL & CORRECT)
 // ============================================
-const registrationSuccess = new Rate('registration_success');
-const creationSuccess = new Rate('creation_success');
-const deletionSuccess = new Rate('deletion_success');
-const overallFlowSuccess = new Rate('overall_flow_success');
+const registrationCompleted = new Rate('registration_completed'); // 200 or 400
+const registrationSuccess   = new Rate('registration_success');   // 200 only
+const creationSuccess       = new Rate('creation_success');       // 200/201
+const deletionSuccess       = new Rate('deletion_success');       // 200 only
+const overallFlowSuccess    = new Rate('overall_flow_success');   // full flow
+const responseTimes         = new Trend('response_times');        // latency
 
-// Counters
-const registrationCounter = new Counter('registration_count');
-const creationCounter = new Counter('creation_count');
-const deletionCounter = new Counter('deletion_count');
+const BASE_URL = 'http://localhost:5000';
 
 // ============================================
-// REALISTIC SPIKE TEST
+// LOAD PROFILE + THRESHOLDS
 // ============================================
 export const options = {
-  vus: 80,  // Reduced from 100 - more realistic
-  
   stages: [
-    // Shorter, more realistic stages
-    { duration: '20s', target: 10 },
-    { duration: '30s', target: 30 },
-    { duration: '30s', target: 50 },
-    { duration: '20s', target: 80 },   // Peak
-    { duration: '20s', target: 30 },   // Drop
-    { duration: '20s', target: 10 },   // Recovery
-    { duration: '10s', target: 0 },
+    { duration: '30s', target: 5 },
+    { duration: '45s', target: 15 },
+    { duration: '45s', target: 30 },
+    { duration: '60s', target: 60 },   // peak
+    { duration: '60s', target: 60 },   // sustain
+    { duration: '30s', target: 20 },
+    { duration: '30s', target: 5 },
+    { duration: '20s', target: 0 },
   ],
-  
-  // ============================================
-  // REALISTIC THRESHOLDS (91% success rate)
-  // ============================================
+
   thresholds: {
-    // Custom metrics - MATCH YOUR 91% SUCCESS RATE
-    'registration_success': ['rate>0.88'],    // 88% - below your 91%
-    'creation_success': ['rate>0.85'],
-    'deletion_success': ['rate>0.80'],
-    'overall_flow_success': ['rate>0.75'],
-    
-    // Count thresholds - REDUCED
-    'registration_count': ['count>150'],
-    'creation_count': ['count>100'],
-    'deletion_count': ['count>80'],
-    
-    // Standard HTTP thresholds
-    http_req_failed: ['rate<0.12'],  // Allow 12% failures (you had ~9%)
-    
-    // Duration thresholds - RELAXED
-    http_req_duration: [
+    // ---------- BUSINESS ----------
+    registration_completed: ['rate>0.95'],
+    registration_success:   ['rate>0.95'],
+    creation_success:       ['rate>0.97'],
+    deletion_success:       ['rate>0.99'],
+    overall_flow_success:   ['rate>0.90'],
+
+    // ---------- PERFORMANCE ----------
+    response_times: [
+      'p(90)<6000',
       'p(95)<8000',
+    ],
+
+    http_req_duration: [
+      'p(90)<6500',
+      'p(95)<8500',
       'max<15000',
     ],
-    
-    // Request rate - ACHIEVABLE
-    http_reqs: ['rate>8'],
-    
-    // Check thresholds - MATCH YOUR 91% SUCCESS
-    checks: ['rate>0.88'],  // 88% - below your 91%
-  },
-  
-  // Performance settings
-  discardResponseBodies: false,
-  noConnectionReuse: false,
-  batch: 8,
-  
-  // Timeouts
-  setupTimeout: '30s',
-  teardownTimeout: '30s',
-  
-  // Tags
-  tags: {
-    test_type: 'spike_test',
-    application: 'password_manager',
-    environment: 'localhost'
+
+    // ---------- RELIABILITY ----------
+    http_req_failed: ['rate<0.05'],
+    checks: ['rate>0.95'],
   },
 };
 
 // ============================================
-// FIXED TEST LOGIC
+// MAIN TEST FLOW
 // ============================================
 export default function () {
-  const BASE_URL = 'http://localhost:5000';
   const vuId = __VU;
   const iterId = __ITER;
-  
-  // GUARANTEED UNIQUE - no collisions
-  const uniqueId = `${vuId}_${iterId}_${Date.now()}_${Math.floor(Math.random() * 999999)}`;
-  
-  // 1. REGISTRATION - WITH SIMPLIFIED CHECKS
-  const user = {
-    name: `User_${vuId}`,
-    email: `test_${uniqueId}@test.k6.com`,
-    password: 'Test123',
-  };
-  
+  const uid = `${vuId}_${iterId}_${Date.now()}`;
+
+  // ============================================
+  // 1. REGISTER
+  // ============================================
   const registerRes = http.post(
     `${BASE_URL}/register`,
-    JSON.stringify(user),
+    JSON.stringify({
+      name: `User_${uid}`,
+      email: `user_${uid}@k6.com`,
+      password: 'Test123!',
+    }),
     {
       headers: { 'Content-Type': 'application/json' },
-      timeout: '10s',
-      tags: { name: 'register' }
+      timeout: '15s',
     }
   );
-  
-  registrationCounter.add(1);
-  
-  // FIXED: SIMPLIFIED CHECKS - NO TOKEN REQUIREMENT
-  const registerCheck = check(registerRes, {
-    'register_completed': (r) => {
-      // Any response except timeout/crash is "completed"
-      return r.status === 200 || r.status === 201 || r.status === 400;
-    },
-    'register_fast': (r) => r.timings.duration < 8000,
-  });
-  
-  // Track success (200/201 only)
-  registrationSuccess.add(registerRes.status === 200 || registerRes.status === 201);
-  
-  // Get token - but don't fail if not present
-  let token = null;
-  if (registerRes.status === 200 || registerRes.status === 201) {
-    try {
-      const body = JSON.parse(registerRes.body);
-      // Try multiple locations, but accept if none found
-      token = body.token || body.access_token || body.accessToken;
-    } catch (e) {
-      // Continue without token
-    }
+
+  responseTimes.add(registerRes.timings.duration);
+
+  registrationCompleted.add(
+    registerRes.status === 200 || registerRes.status === 400
+  );
+  registrationSuccess.add(registerRes.status === 200);
+
+  if (__ITER < 2) {
+    console.log(`REGISTER → ${registerRes.status}`);
   }
-  
-  // If registration returned 400 (duplicate), try login
-  if (!token && registerRes.status === 400) {
-    sleep(0.1);
-    
-    const loginRes = http.post(
-      `${BASE_URL}/login`,
-      JSON.stringify({
-        email: user.email,
-        password: user.password
-      }),
-      {
-        headers: { 'Content-Type': 'application/json' },
-        timeout: '8s'
-      }
-    );
-    
-    if (loginRes.status === 200) {
-      try {
-        const body = JSON.parse(loginRes.body);
-        token = body.token || body.access_token;
-      } catch (e) {
-        // Continue without token
-      }
-    }
+
+  if (registerRes.status !== 200) {
+    sleep(1);
+    return;
   }
-  
-  // If still no token, use fallback
-  if (!token) {
-    token = 'test_token_fallback';  // Use fallback token for testing
+
+  let token;
+  try {
+    token = JSON.parse(registerRes.body).token;
+  } catch {
+    sleep(1);
+    return;
   }
-  
+
+  // ============================================
   // 2. CREATE PASSWORD
-  sleep(0.1);
-  
+  // ============================================
+  sleep(0.5);
+
   const createRes = http.post(
     `${BASE_URL}/api/passwords`,
     JSON.stringify({
-      title: `Password_${uniqueId}`,
-      username: `user_${vuId}`,
-      password: 'encrypted123',
+      title: `Password_${uid}`,
+      username: 'testuser',
+      password: 'encrypted_test',
     }),
     {
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token}`,
+        Authorization: `Bearer ${token}`,
       },
-      timeout: '8s',
-      tags: { name: 'create' }
+      timeout: '10s',
     }
   );
-  
-  creationCounter.add(1);
-  
-  const createCheck = check(createRes, {
-    'create_ok': (r) => r.status === 200 || r.status === 201 || r.status === 400,
-    'create_fast': (r) => r.timings.duration < 6000,
-  });
-  
+
+  responseTimes.add(createRes.timings.duration);
+
   creationSuccess.add(createRes.status === 200 || createRes.status === 201);
-  
-  // Get password ID if available
-  let passwordId = null;
-  if (createRes.status === 200 || createRes.status === 201) {
-    try {
-      const data = JSON.parse(createRes.body);
-      passwordId = data.id || data._id || `mock_id_${uniqueId}`;
-    } catch (e) {
-      passwordId = `mock_id_${uniqueId}`;  // Use mock ID for testing
-    }
-  }
-  
-  // 3. DELETE PASSWORD (if we have an ID)
-  if (passwordId) {
-    sleep(0.1);
-    
-    const deleteRes = http.del(
-      `${BASE_URL}/api/passwords/${passwordId}`,
-      null,
-      {
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`,
-        },
-        timeout: '6s',
-        tags: { name: 'delete' }
-      }
-    );
-    
-    deletionCounter.add(1);
-    
-    const deleteCheck = check(deleteRes, {
-      'delete_ok': (r) => r.status === 200 || r.status === 204 || r.status === 404,
-      'delete_fast': (r) => r.timings.duration < 5000,
-    });
-    
-    deletionSuccess.add(deleteRes.status === 200 || deleteRes.status === 204);
-    
-    // Track overall success
-    if ((registerRes.status === 200 || registerRes.status === 201) && 
-        (createRes.status === 200 || createRes.status === 201) && 
-        (deleteRes.status === 200 || deleteRes.status === 204)) {
-      overallFlowSuccess.add(1);
-    }
-  }
-  
-  // Minimal sleep for higher throughput
-  sleep(0.2 + Math.random() * 0.3);  // 0.2-0.5 seconds
-}
 
-// Setup
-export function setup() {
-  console.log('Starting test...');
-  return { setupTime: Date.now() };
-}
+  if (__ITER < 2) {
+    console.log(`CREATE → ${createRes.status}`);
+  }
 
-// Teardown
-export function teardown(data) {
-  console.log(`Test completed in ${Date.now() - data.setupTime}ms`);
+  if (createRes.status !== 200 && createRes.status !== 201) {
+    sleep(1);
+    return;
+  }
+
+  let passwordId;
+  try {
+    const body = JSON.parse(createRes.body);
+    passwordId = body.id || body._id;
+  } catch {
+    sleep(1);
+    return;
+  }
+
+  // ============================================
+  // 3. DELETE PASSWORD
+  // ============================================
+  sleep(0.5);
+
+  const deleteRes = http.del(
+    `${BASE_URL}/api/passwords/${passwordId}`,
+    null,
+    {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+      timeout: '10s',
+    }
+  );
+
+  responseTimes.add(deleteRes.timings.duration);
+
+  const deleteOk = check(deleteRes, {
+    'delete status 200': (r) => r.status === 200,
+  });
+
+  deletionSuccess.add(deleteRes.status === 200);
+
+  if (__ITER < 2) {
+    console.log(`DELETE → ${deleteRes.status}`);
+  }
+
+  // ============================================
+  // OVERALL FLOW
+  // ============================================
+  if (
+    registerRes.status === 200 &&
+    (createRes.status === 200 || createRes.status === 201) &&
+    deleteRes.status === 200
+  ) {
+    overallFlowSuccess.add(1);
+  } else {
+    overallFlowSuccess.add(0);
+  }
+
+  sleep(Math.random() * 2 + 1);
 }
